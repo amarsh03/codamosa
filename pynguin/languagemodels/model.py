@@ -94,10 +94,19 @@ def _openai_api_legacy_request(self, function_header, context):
 
 
 def _openai_api_request(self, function_header, context):
-    url = f"{self._model_base_url}{self._model_relative_url}"
+    url = "https://api.openai.com/v1/chat/completions"
     payload = {
         "model": self._complete_model,
-        "prompt": context + "\n" + function_header,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a pure code completion engine. Output ONLY raw Python code to complete the prompt. Do NOT use markdown formatting. Do NOT use ```python blocks. Do NOT include any conversational text."
+            },
+            {
+                "role": "user",
+                "content": context + "\n" + function_header
+            }
+        ],
         "max_tokens": 200,
         "temperature": self._temperature,
         "stop": ["\n# Unit test for", "\ndef ", "\nclass "],
@@ -288,11 +297,20 @@ class _OpenAILanguageModel:
         #     used_tokens=approx_number_tokens(function_to_mutate)
         # )
         context = ""
-        url = f"https://api.openai.com/v1/engines/{self.edit_model}/edits"
+        url = "https://api.openai.com/v1/chat/completions"
 
         payload = {
-            "input": context + "\n" + function_to_mutate,
-            "instruction": "Fill in the ??",
+            "model": self._complete_model,  # Reuse the main gpt-4o model
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a coding assistant. Fill in the ?? in the provided code. Return ONLY the complete, fixed code without any markdown formatting or extra dialogue."
+                },
+                {
+                    "role": "user",
+                    "content": context + "\n" + function_to_mutate
+                }
+            ],
             "temperature": self._temperature,
         }
         headers = {
@@ -310,7 +328,7 @@ class _OpenAILanguageModel:
         if res.status_code != 200:
             logger.error("Failed to call for edit:\n%s", res.json())
             return ""
-        return res.json()["choices"][0]["text"]
+        return res.json()["choices"][0]["message"]["content"]
 
     def _call_completion(
         self, function_header: str, context_start: int, context_end: int
@@ -350,7 +368,7 @@ class _OpenAILanguageModel:
             logger.error("Failed to call for completion:\n%s", res.json())
             logger.error(self.complete_model)
             return ""
-        return res.json()["choices"][0]["text"]
+        return res.json()["choices"][0]["message"]["content"]
 
     def _get_num_tokens_at_line(self, line_num: int) -> int:
         """Get the approximate number of tokens for the source file at line_num.
